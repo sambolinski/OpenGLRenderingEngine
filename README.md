@@ -37,6 +37,7 @@ This engine was created to have a quick and easy setup for an OpenGL context as 
 - Skybox
 ##### Lighting
 - Blinn-Phong lighting
+- Reflections
 ##### Primitives
 - Cube
 #### Shaders
