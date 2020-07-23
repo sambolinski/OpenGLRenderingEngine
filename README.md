@@ -8,6 +8,7 @@ This engine was created to have a quick and easy setup for an OpenGL context as 
 - Glad loader (https://glad.dav1d.de/)
 - GLFW (https://www.glfw.org/)
 - Matrix Stack (Jason L. McKesson)
+- stb_image (Sean Barrett,https://github.com/nothings/stb/blob/master/stb_image.h)
 ## Features
 ### Implemented
 #### Rendering
