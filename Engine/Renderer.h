@@ -58,7 +58,7 @@ namespace oglr{
 
 
         std::string ToString();
-
+        glm::vec4 ToGLM();
         //Comparators
         bool operator==(const RGBA& c);
         bool operator!=(const RGBA& c);
@@ -81,8 +81,8 @@ namespace oglr{
         DIRECTION_RIGHT     ( 1.0f, 0.0f, 0.0f),
         DIRECTION_UP        ( 0.0f, 1.0f, 0.0f),
         DIRECTION_DOWN      ( 0.0f,-1.0f, 0.0f),
-        DIRECTION_FORWARD   ( 0.0f, 0.0f, 1.0f),
-        DIRECTION_BACKWARD  ( 0.0f, 0.0f,-1.0f);
+        DIRECTION_BACKWARD  ( 0.0f, 0.0f, 1.0f),
+        DIRECTION_FORWARD   ( 0.0f, 0.0f,-1.0f);
 
     
     // Projection matrices. Do not edit in implementation class.
@@ -113,21 +113,42 @@ namespace oglr{
     
     static class Mouse {
     private:
+        static double xPrev;
+        static double yPrev;
         static double x;
         static double y;
         static double xScroll;
         static double yScroll;
+
+        static double xOffset;
+        static double yOffset;
+        static double yaw;
+        static double pitch;
+
+        static double sensitivity;
+        static bool activation;
+        static bool viewByMouse;
     public:
         static Key::Key LEFT_MOUSE, RIGHT_MOUSE, MIDDLE_MOUSE;
     public:
         static void UpdateCoordinates(double xPos, double yPos);
         static void UpdateScroll(double xOffset, double yOffset);
         static void ResetScroll();
-    public://Getters
+    public://Getters and setters
         static double GetX();
         static double GetY();
         static double GetScrollX();
         static double GetScrollY();
+        static double GetYaw();
+        static double GetPitch();
+        static bool GetViewByMouse();
+        static glm::vec3 GetDirection();
+        static void SetSensitivity(double sSen);
+        static void ResetActivation();
+        static void SetYaw(double y);
+        static void SetPitch(double p);
+        static void EnableViewByMouse();
+        static void DisableViewByMouse();
     };
 
     //CAMERA
@@ -365,7 +386,9 @@ namespace oglr {
         return "(" + std::to_string(r) + ", " + std::to_string(r) + ", " + std::to_string(r) + ", " + std::to_string(r) + ")";
     }
 
-    
+    glm::vec4 RGBA::ToGLM() {
+        return glm::vec4(r, g, b, a);
+    }
     //
     //USER INPUT
     //
@@ -396,12 +419,42 @@ namespace oglr {
     double Mouse::y = 0;
     double Mouse::xScroll = 0;
     double Mouse::yScroll = 0;
+
+    double Mouse::xPrev = 0;
+    double Mouse::yPrev = 0;
+
+    double Mouse::xOffset = 0;
+    double Mouse::yOffset = 0;
+
+    double Mouse::yaw = -90;
+    double Mouse::pitch = 0;
+    double Mouse::sensitivity = 0.1;
+
+    bool Mouse::activation = true;
+    bool Mouse::viewByMouse = false;
+
     Key::Key Mouse::LEFT_MOUSE = Key::Key();
     Key::Key Mouse::RIGHT_MOUSE = Key::Key();
     Key::Key Mouse::MIDDLE_MOUSE = Key::Key();
+
     void Mouse::UpdateCoordinates(double xPos, double yPos) {
         x = xPos;
         y = yPos;
+        https://learnopengl.com/Getting-started/Camera
+        if (activation) {
+            xPrev = x;
+            yPrev = y;
+            activation = false;
+        }
+        if (viewByMouse) {
+            xOffset = (x - xPrev)*sensitivity;
+            yOffset = (yPrev - y)*sensitivity;
+            xPrev = x;
+            yPrev = y;
+
+            yaw += xOffset;
+            pitch += yOffset;
+        }
     }
     void Mouse::UpdateScroll(double xOffset, double yOffset) {
         xScroll = xOffset;
@@ -425,6 +478,50 @@ namespace oglr {
 
     double Mouse::GetScrollY() {
         return yScroll;
+    }
+
+    double Mouse::GetYaw() {
+        return yaw;
+    }
+    double Mouse::GetPitch() {
+        return pitch;
+    }
+
+    void Mouse::SetSensitivity(double dSens) {
+        sensitivity = dSens;
+    }
+
+    glm::vec3 Mouse::GetDirection() {
+        // https://learnopengl.com/Getting-started/Camera
+        glm::vec3 direction;
+        direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        direction.y = sin(glm::radians(pitch));
+        direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        return glm::normalize(direction);
+    }
+
+    void Mouse::ResetActivation() {
+        activation = true;
+    }
+
+    void Mouse::SetYaw(double y) {
+        yaw = y;
+    }
+
+    void Mouse::SetPitch(double p) {
+        pitch = p;
+    }
+
+    void Mouse::EnableViewByMouse() {
+        viewByMouse = true;
+    }
+
+    void Mouse::DisableViewByMouse() {
+        viewByMouse = false;
+    }
+
+    bool Mouse::GetViewByMouse() {
+        return viewByMouse;
     }
     //
     // RENDERER
@@ -764,10 +861,15 @@ namespace oglr {
     void Camera::RotateDeg(float angle, float fDt){
         RotateDeg(angle, m_Up, fDt);
     }
+    // Translation in global space
     void Camera::Translate(glm::vec3 direction, float fDt){
         m_Position += direction * fDt;
-    }// Translation in global space
-    void Camera::Strafe(glm::vec3 direction, float fDt){} //Translation based on local camera space.
+    }
+    //Translation based on local camera space.
+    void Camera::Strafe(glm::vec3 direction, float fDt) {
+    }
+
+
 
 
     //OPENGL RENDERING CLASSES
@@ -990,17 +1092,20 @@ namespace oglr {
             glm::vec3(-1.0f, -1.0f, 0.0f),
             glm::vec3(-1.0f,  1.0f, 0.0f),
         };
-
+        glm::vec3 colour(oglr::GREY.r, oglr::GREY.g, oglr::GREY.b);
         for (unsigned int i = 0; i < 6; i++) {
             m_VBO.AddData(&planeVertices[i], sizeof(glm::vec3));
+            m_VBO.AddData(&colour, sizeof(glm::vec3));
         }
 
         m_VBO.UploadBufferData(GL_STATIC_DRAW);
-        GLsizei istride = sizeof(glm::vec3);
+        GLsizei istride = 2*sizeof(glm::vec3);
 
         // Vertex positions
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, istride, 0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, istride, (void*)sizeof(glm::vec3));
 
     }
     void primitive::Plane::Render() {
