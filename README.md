@@ -30,6 +30,7 @@ This engine was created to have a quick and easy setup for an OpenGL context as 
 ##### Mouse
 - Mouse Coordinates
 - Mouse Buttons (left, right, middle mouse)
+- Mouse movement
 
 ### Todo
 #### Rendering
@@ -46,4 +47,3 @@ This engine was created to have a quick and easy setup for an OpenGL context as 
 - Ray marching shader
 #### User Input
 - More keys
-- Mouse movement
