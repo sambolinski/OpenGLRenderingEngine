@@ -76,13 +76,23 @@ namespace oglr{
         GREY                ((uint8_t)190, (uint8_t)190, (uint8_t)190),
         DARK_ELECTRIC_BLUE  ((uint8_t) 83, (uint8_t)104, (uint8_t)120);
 
+    //Global Translation constants
     static const glm::vec3 
-        DIRECTION_LEFT      (-1.0f, 0.0f, 0.0f),
-        DIRECTION_RIGHT     ( 1.0f, 0.0f, 0.0f),
-        DIRECTION_UP        ( 0.0f, 1.0f, 0.0f),
-        DIRECTION_DOWN      ( 0.0f,-1.0f, 0.0f),
-        DIRECTION_BACKWARD  ( 0.0f, 0.0f, 1.0f),
-        DIRECTION_FORWARD   ( 0.0f, 0.0f,-1.0f);
+        X_NEGATIVE  (-1.0f, 0.0f, 0.0f),
+        X_POSITIVE  ( 1.0f, 0.0f, 0.0f),
+        Y_POSITIVE  ( 0.0f, 1.0f, 0.0f),
+        Y_NEGATIVE  ( 0.0f,-1.0f, 0.0f),
+        Z_POSITIVE  ( 0.0f, 0.0f, 1.0f),
+        Z_NEGATIVE  ( 0.0f, 0.0f,-1.0f);
+
+    //Local Translation constants
+    static const unsigned int
+        STRAFE_LEFT     (1),
+        STRAFE_RIGHT    (2),
+        STRAFE_UP       (3),
+        STRAFE_DOWN     (4),
+        STRAFE_FORWARD  (5),
+        STRAFE_BACKWARD (6);
 
     
     // Projection matrices. Do not edit in implementation class.
@@ -108,7 +118,7 @@ namespace oglr{
         static Key
             A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
             LEFT, RIGHT, UP, DOWN,
-            LSHIFT, RSHIFT, LCTRL, RCTRL;
+            LSHIFT, RSHIFT, LCTRL, RCTRL, SPACE;
     }
     
     static class Mouse {
@@ -182,9 +192,14 @@ namespace oglr{
         void RotateDeg(float angle, glm::vec3 up, float fDt = 1.0f);
         void RotateDeg(float angle, float fDt = 1.0f);
         void Translate(glm::vec3 direction, float fDt);// Translation in global space
-        void Strafe(glm::vec3 direction, float fDt); //Translation based on local camera space.
+        void Strafe(unsigned int direction, float fDt); //Translation based on local camera space.
     };
 
+    struct Light {
+        glm::vec3 ambient;
+        glm::vec3 diffuse;
+        glm::vec3 specular;
+    };
     //Rendering Engine    
     class Renderer {
     static uint16_t SCREEN_WIDTH;
@@ -742,6 +757,9 @@ namespace oglr {
             case GLFW_KEY_RIGHT_CONTROL:
                 Key::RCTRL.Update(action);
                 break;
+            case GLFW_KEY_SPACE:
+                Key::SPACE.Update(action);
+                break;
         }
     }
 
@@ -866,7 +884,30 @@ namespace oglr {
         m_Position += direction * fDt;
     }
     //Translation based on local camera space.
-    void Camera::Strafe(glm::vec3 direction, float fDt) {
+    void Camera::Strafe(unsigned int direction, float fDt) {
+        glm::vec3 T = glm::normalize(m_View);
+        glm::vec3 N = glm::normalize(glm::cross(T, glm::vec3(0, 1, 0)));
+        glm::vec3 B = glm::normalize(glm::cross(N, T));
+        switch (direction) {
+            case STRAFE_LEFT:
+                m_Position -= N * fDt;
+                break;
+            case STRAFE_RIGHT:
+                m_Position += N * fDt;
+                break;
+            case STRAFE_UP:
+                m_Position += B * fDt;
+                break;
+            case STRAFE_DOWN:
+                m_Position -= B * fDt;
+                break;
+            case STRAFE_FORWARD:
+                m_Position += T * fDt;
+                break;
+            case STRAFE_BACKWARD:
+                m_Position -= T * fDt;
+                break;
+        }
     }
 
 
