@@ -15,8 +15,11 @@
 #include <vector>
 #include <windows.h>
 #include <fstream>
+#include <sstream>
+#include <iterator>
 
-
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 //UNAMED RENDERING ENGINE
 
@@ -98,8 +101,8 @@ namespace oglr{
     // Projection matrices. Do not edit in implementation class.
     static const float
         DEFAULT_FOV = 45.0f,
-        DEFAULT_FNEAR = 0.5f,
-        DEFAULT_FFAR = 1000.0f;
+        DEFAULT_FNEAR = 0.1f,
+        DEFAULT_FFAR = 3000.0f;
     static glm::mat4
         PERSPECTIVE_PROJECTION,     
         ORTHOGRAPHIC_PROJECTION;
@@ -186,6 +189,8 @@ namespace oglr{
         glm::vec3 &GetPosition();
         glm::vec3 &GetView();
         glm::vec3 &GetUp();
+
+        glm::mat3 ComputeNormalMatrix(const glm::mat4 &modelViewMatrix);
     public://Movement
         void RotateRadian(float angle, glm::vec3 up, float fDt = 1.0f);
         void RotateRadian(float angle, float fDt = 1.0f);
@@ -196,9 +201,13 @@ namespace oglr{
     };
 
     struct Light {
+    public:
+        glm::vec3 position;
         glm::vec3 ambient;
         glm::vec3 diffuse;
         glm::vec3 specular;
+        Light() {}
+
     };
     //Rendering Engine    
     class Renderer {
@@ -213,6 +222,7 @@ namespace oglr{
         Renderer();
         ~Renderer();
         void Create(uint16_t width = 1250, uint16_t height = 850);
+        void InitialiseDefaults();
         void InitialiseShaders();
     public: //Window Settings
         void SetWindowTitle(std::string name);
@@ -345,6 +355,72 @@ namespace oglr{
             void Release();
         };
     };
+
+    
+    class Texture {
+    private:
+        unsigned int m_TextureID;
+        int m_Width;
+        int m_Height;
+        int m_Channels;
+        unsigned char* m_Data;
+        std::string m_Location;
+    public:
+        Texture(std::string location);
+        Texture();
+        bool Load(std::string location);
+        void Bind();
+        void UnBind();
+    }; 
+    static Texture
+        DEFAULT_TEXTURE;
+
+    struct Face {
+    public:
+        std::vector<glm::vec3> m_Vertices;
+        std::vector<glm::vec2> m_TextureCoordinates;
+        std::vector<glm::vec3> m_Normals;
+        Face() {}
+    };
+    struct Material {
+    public:
+        float exponent = 0;         //Ns
+        glm::vec3 ambience;     //Ka
+        glm::vec3 diffuse;      //Kd
+        glm::vec3 specular;     //Ks
+        glm::vec3 emissive;     //Ke
+        float opticalDensity = 0;   //Ni
+        float dissolve = 0;         //d
+        std::string m_Name;     //newmtl
+        Material() {}
+
+    };
+    class Model {
+    private:
+        VertexBufferObject m_VBO;
+        unsigned int m_VAO;
+        Texture m_Texture;
+        std::vector<oglr::Face> m_Faces;
+        Material m_Material;
+        bool textured = true;
+    public:
+        const Material& GetMaterial() const { return m_Material; }
+        const bool& IsTextured() const { return textured; }
+        void EnableTexture() { textured = true; }
+        void DisableTexture() { textured = false; }
+        void SetColour(RGBA colour) { SetColour(glm::vec3(colour.r, colour.g, colour.b)); };
+        void SetColour(glm::vec3 colour) {};
+    public:
+        Model();
+
+        void Load(std::string fileLocation);
+
+        void Render();
+
+        void Release();
+    };
+
+    
 }
 
 
@@ -443,7 +519,7 @@ namespace oglr {
 
     double Mouse::yaw = -90;
     double Mouse::pitch = 0;
-    double Mouse::sensitivity = 0.1;
+    double Mouse::sensitivity = 0.5;
 
     bool Mouse::activation = true;
     bool Mouse::viewByMouse = false;
@@ -569,6 +645,7 @@ namespace oglr {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+        
         //Window Creation
         m_Window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, sWindowTitle.c_str(), NULL, NULL);
         if (m_Window == NULL) {
@@ -576,27 +653,33 @@ namespace oglr {
             return;
         }
         glfwMakeContextCurrent(m_Window);
-
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
         //Loading GLAD
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
             return;
         }
-        
+
+        char* version = (char *)glGetString(GL_VERSION);
+        std::cout << version << std::endl;
         SetAntiAliasingSamples(4);
         EnableAntiAliasing();
 
-        InitialiseShaders();
+        InitialiseDefaults();
         
         //OpenGL initial Variables
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
-
-        char* version = (char *)glGetString(GL_VERSION);
-        std::cout << version << std::endl;
         
         //Debugging
         //glEnable(GL_DEBUG_OUTPUT);
         //glDebugMessageCallback(MessageCallback, 0);
+    }
+    void Renderer::InitialiseDefaults() {
+        //Shaders
+        InitialiseShaders();
+        //Textures
+        stbi_set_flip_vertically_on_load(true);
+        DEFAULT_TEXTURE.Load("Resources/Textures/default.png");
     }
     void Renderer::InitialiseShaders(){
         //Shaders
@@ -808,7 +891,6 @@ namespace oglr {
             timeStart = timeEnd;
             float fElapsedTime = deltaTime.count();
 
-
             OnUpdate(fElapsedTime);
 
 
@@ -867,7 +949,10 @@ namespace oglr {
     glm::vec3 &Camera::GetUp() {
         return m_Up;
     }
-
+    // The normal matrix is used to transform normals to eye coordinates -- part of lighting calculations
+    glm::mat3 Camera::ComputeNormalMatrix(const glm::mat4 &modelViewMatrix) {
+        return glm::transpose(glm::inverse(glm::mat3(modelViewMatrix)));
+    }
     //Movement
     void Camera::RotateRadian(float angle, glm::vec3 up, float fDt){
         RotateDeg(glm::degrees(angle), up, fDt);
@@ -954,8 +1039,6 @@ namespace oglr {
             }
             const char* shaderSource = shaderSourceString.c_str();
             m_ID = glCreateShader(type);
-
-            int bla = 2;
             glShaderSource(m_ID, 1, &shaderSource, NULL);
             glCompileShader(m_ID);
             m_IsLoaded = true;
@@ -1134,19 +1217,30 @@ namespace oglr {
             glm::vec3(-1.0f,  1.0f, 0.0f),
         };
         glm::vec3 colour(oglr::GREY.r, oglr::GREY.g, oglr::GREY.b);
+        glm::vec2 textureCoordinates[6] = {
+            glm::vec2( 1.0f,  1.0f),
+            glm::vec2( 1.0f,  0.0f),
+            glm::vec2( 0.0f,  1.0f),
+            glm::vec2( 1.0f,  0.0f),
+            glm::vec2( 0.0f,  0.0f),
+            glm::vec2( 0.0f,  1.0f)
+        };
         for (unsigned int i = 0; i < 6; i++) {
             m_VBO.AddData(&planeVertices[i], sizeof(glm::vec3));
             m_VBO.AddData(&colour, sizeof(glm::vec3));
+            m_VBO.AddData(&textureCoordinates[i], sizeof(glm::vec2));
         }
 
         m_VBO.UploadBufferData(GL_STATIC_DRAW);
-        GLsizei istride = 2*sizeof(glm::vec3);
+        GLsizei istride = 2*sizeof(glm::vec3) + sizeof(glm::vec2);
 
         // Vertex positions
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, istride, 0);
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, istride, (void*)sizeof(glm::vec3));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, istride, (void*)(sizeof(glm::vec3)*2));
 
     }
     void primitive::Plane::Render() {
@@ -1263,5 +1357,194 @@ namespace oglr {
     void primitive::Cube::Release() {
         glDeleteVertexArrays(1, &m_VAO);
         m_VBO.DeleteBuffer();
+    }
+
+    //https://learnopengl.com/Getting-started/Textures
+    Texture::Texture(std::string location) {
+        Load(location);
+    }
+    Texture::Texture() {}
+    bool Texture::Load(std::string location) {
+        m_Data = stbi_load(location.c_str(), &m_Width, &m_Height, &m_Channels, 0);
+        if (!m_Data) {
+            std::cout << "Failed to load texture\n";
+            return false;
+        }
+        return true;
+    }
+
+    void Texture::Bind() {
+        if (m_Data) {
+            glGenTextures(1, &m_TextureID);
+            glBindTexture(GL_TEXTURE_2D, m_TextureID);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, m_Data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+        }
+        stbi_image_free(m_Data);
+    }
+    void Texture::UnBind() {
+
+    }
+
+    //Model
+    //STRING SPLITTING FOR READING
+    //https://stackoverflow.com/questions/236129/how-do-i-iterate-over-the-words-of-a-string/236803#236803
+    template <typename Out>
+    void split(const std::string &s, char delim, Out result) {
+        std::istringstream iss(s);
+        std::string item;
+        while (std::getline(iss, item, delim)) {
+            *result++ = item;
+        }
+    }
+
+    std::vector<std::string> split(const std::string &s, char delim) {
+        std::vector<std::string> elems;
+        split(s, delim, std::back_inserter(elems));
+        return elems;
+    }
+
+    Model::Model() {
+
+    }
+
+    void Model::Load(std::string fileLocation) {
+        std::ifstream file;
+        std::string line;
+        file.open(fileLocation);
+        std::vector<std::string> splitLine;
+
+        std::vector<glm::vec3> vertices;
+        std::vector<glm::vec3> normals;
+        std::vector<glm::vec2> textureCoords;
+        
+        std::string materialFile;
+        while (getline(file,line)) {
+            splitLine = split(line, ' ');
+            if (splitLine.at(0) == "mtllib") {
+                materialFile = splitLine.at(1);
+            }else if (splitLine.at(0) == "v") {
+                vertices.push_back(glm::vec3(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str()), ::atof(splitLine.at(3).c_str())));
+            }else if (splitLine.at(0) == "vt") {
+                textureCoords.push_back(glm::vec2(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str())));
+            }else if (splitLine.at(0) == "vn") {
+                normals.push_back(glm::vec3(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str()), ::atof(splitLine.at(3).c_str())));
+            } else if (splitLine.at(0) == "f") {
+                //combining faces
+                std::vector<std::string> faceSplit;
+                oglr::Face face;
+                for (unsigned int i = 1; i < splitLine.size(); i++) {
+                    faceSplit = split(splitLine.at(i), '/');
+                    for (unsigned int j = 0; j < faceSplit.size(); j++) {
+                        switch (j) {
+                            case 0:
+                                face.m_Vertices.push_back(vertices.at(::atof(faceSplit.at(j).c_str()) - 1));
+                                break;
+                            case 1:
+                                face.m_TextureCoordinates.push_back(textureCoords.at(::atof(faceSplit.at(j).c_str()) - 1));
+                                break;
+                            case 2:
+                                face.m_Normals.push_back(normals.at(::atof(faceSplit.at(j).c_str()) - 1));
+                                break;
+                        }
+                    }
+                }
+                m_Faces.push_back(face);
+            }
+        }        
+        file.close();
+
+        //Material File Location
+        std::vector<std::string> materialFileSplit = split(fileLocation, '/');
+        materialFileSplit.back() = materialFile;
+        materialFile = "";
+        for (unsigned int i = 0; i < materialFileSplit.size(); i++) {
+            materialFile += materialFileSplit.at(i);
+            if (i != materialFileSplit.size() - 1) materialFile += "/";
+        }
+        //Parse Material
+        file.open(materialFile);
+        m_Material = Material();
+        splitLine.empty();
+        if (file.is_open()) {
+            while (getline(file, line)) {
+                splitLine = split(line, ' ');
+                if (splitLine.size() > 0) {
+                    if (splitLine.at(0) == "newmtl") {
+                        m_Material.m_Name = splitLine.at(1);
+                    } else if (splitLine.at(0) == "Ns") {
+                        m_Material.exponent = (float)::atof(splitLine.at(1).c_str());
+                    } else if (splitLine.at(0) == "Ka") {
+                        m_Material.ambience = glm::vec3(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str()), ::atof(splitLine.at(3).c_str()));
+                    } else if (splitLine.at(0) == "Kd") {
+                        m_Material.diffuse = glm::vec3(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str()), ::atof(splitLine.at(3).c_str()));
+                    } else if (splitLine.at(0) == "Ks") {
+                        m_Material.specular = glm::vec3(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str()), ::atof(splitLine.at(3).c_str()));
+                    } else if (splitLine.at(0) == "Ke") {
+                        m_Material.emissive = glm::vec3(::atof(splitLine.at(1).c_str()), ::atof(splitLine.at(2).c_str()), ::atof(splitLine.at(3).c_str()));
+                    } else if (splitLine.at(0) == "Ni") {
+                        m_Material.opticalDensity = (float)::atof(splitLine.at(1).c_str());
+                    } else if (splitLine.at(0) == "d") {
+                        m_Material.dissolve = (float)::atof(splitLine.at(1).c_str());
+                    } else if (splitLine.at(0) == "map_Kd") {
+                        m_Texture = Texture();
+                        std::vector<std::string> textureImage = split(fileLocation, '/');
+                        std::string textureFile = "";
+                        textureImage.back() = splitLine.at(1);
+                        for (unsigned int i = 0; i < textureImage.size(); i++) {
+                            textureFile += textureImage.at(i);
+                            if (i != textureImage.size() - 1) textureFile += "/";
+                        }
+                        if (m_Texture.Load(textureFile)) {
+                        } else {
+                            m_Texture = DEFAULT_TEXTURE;
+                        }
+                        m_Texture.Bind();
+                    }
+                }
+            }
+        }
+        file.close();
+        //Put Mesh into buffer
+        glGenVertexArrays(1, &m_VAO);
+        glBindVertexArray(m_VAO);
+
+        m_VBO.Create();
+        m_VBO.BindBuffer();
+
+        for (unsigned int i = 0; i < m_Faces.size(); i++) {
+            for (unsigned int j = 0; j < 3; j++) {
+                m_VBO.AddData(&m_Faces[i].m_Vertices.at(j), sizeof(glm::vec3));
+                m_VBO.AddData(&m_Faces[i].m_TextureCoordinates.at(j), sizeof(glm::vec2));
+                m_VBO.AddData(&m_Faces[i].m_Normals.at(j), sizeof(glm::vec3));
+            }
+        }
+
+        m_VBO.UploadBufferData(GL_STATIC_DRAW);
+        GLsizei istride = 2 * sizeof(glm::vec3) + sizeof(glm::vec2);
+
+        // Vertex positions
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, istride, 0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, istride, (void*)sizeof(glm::vec3));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, istride, (void*)(sizeof(glm::vec3)+sizeof(glm::vec2)));
+    }
+
+    void Model::Render() {
+        glBindVertexArray(m_VAO);
+        glDrawArrays(GL_TRIANGLES, 0, m_Faces.size()*3);
+    }
+
+    void Model::Release() {
+        glDeleteVertexArrays(1, &m_VAO);
+        m_VBO.DeleteBuffer();
+        m_Texture.UnBind();
     }
 }
