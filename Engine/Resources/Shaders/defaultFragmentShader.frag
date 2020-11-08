@@ -4,6 +4,7 @@ out vec4 FragColor;
 in vec3 Normal;  
 in vec4 FragPos;  
 in vec2 TextureCoords;
+in vec3 worldPosition;
 
 struct Light{
     vec3 position;
@@ -23,6 +24,7 @@ uniform Material material;
 uniform sampler2D ourTexture;
 uniform bool applyTexture;
 uniform bool renderSkybox;
+uniform samplerCube skybox; // cubemap texture sampler
 
 // This function implements the Phong shading model
 // The code is based on the OpenGL 4.0 Shading Language Cookbook, Chapter 2, pp. 62 - 63, with a few tweaks. 
@@ -50,10 +52,15 @@ vec3 BlinnPhongModel(Light light, vec4 eyePosition, vec3 eyeNorm)
 
 void main()
 {
+    
     vec3 lighting = BlinnPhongModel(lights[0],FragPos, normalize(Normal));
     vec4 textureColour = texture(ourTexture, TextureCoords);
     FragColor = textureColour*vec4(lighting, 1.0);
 } 
+
+
+
+
 /*
  if(renderSkybox){
         FragColor = texture(CubeMapTex, worldPosition);

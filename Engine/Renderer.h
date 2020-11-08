@@ -30,7 +30,6 @@
 //VBO, Model loader, parts of shader taken from City Unversity OpenGL template by Dr Greg Slabaugh gregory.slabaugh.1@city.ac.uk
 
 
-
 void ClearError() {
     while (glGetError() != GL_NO_ERROR);
 }
@@ -102,7 +101,7 @@ namespace oglr{
     static const float
         DEFAULT_FOV = 45.0f,
         DEFAULT_FNEAR = 0.1f,
-        DEFAULT_FFAR = 3000.0f;
+        DEFAULT_FFAR = 6000.0f;
     static glm::mat4
         PERSPECTIVE_PROJECTION,     
         ORTHOGRAPHIC_PROJECTION;
@@ -315,13 +314,16 @@ namespace oglr{
         JULIA_VERTEX_SHADER,
         JULIA_FRAGMENT_SHADER,
         MANDELBROT_DOUBLE_VERTEX_SHADER, 
-        MANDELBROT_DOUBLE_FRAGMENT_SHADER;
+        MANDELBROT_DOUBLE_FRAGMENT_SHADER,
+        DEFAULT_SKYBOX_VERTEX_SHADER,
+        DEFAULT_SKYBOX_FRAGMENT_SHADER;
     
     static ShaderProgram
         DEFAULT_SHADER_PROGRAM,
         MANDELBROT_SHADER_PROGRAM,
         JULIA_SHADER_PROGRAM,
-        MANDELBROT_DOUBLE_SHADER_PROGRAM;
+        MANDELBROT_DOUBLE_SHADER_PROGRAM,
+        DEFAULT_SKYBOX_SHADER_PROGRAM;
       
     namespace primitive {
         //Test rendering Triangle
@@ -375,6 +377,19 @@ namespace oglr{
     static Texture
         DEFAULT_TEXTURE;
 
+    class Cubemap {
+        unsigned int m_uiVAO;
+        unsigned int m_Texture;
+        unsigned int m_Sampler; 
+        VertexBufferObject m_VBO;
+    public:
+        Cubemap() {}
+        void Create(std::string posX, std::string negX, std::string posY, std::string negY, std::string posZ, std::string negZ);
+        void Release();
+        unsigned char* LoadTexture(std::string fileName, int& width, int& height, int& channels);
+        void Bind();
+    };
+
     struct Face {
     public:
         std::vector<glm::vec3> m_Vertices;
@@ -420,6 +435,18 @@ namespace oglr{
         void Release();
     };
 
+
+    class Skybox {
+    private:
+        Cubemap m_Cubemap;
+        unsigned int m_VAO;
+        VertexBufferObject m_VBO;
+    public:
+        Skybox() {}
+        void Create(float size, std::string posX, std::string negX, std::string posY, std::string negY, std::string posZ, std::string negZ);
+        void Render();
+        void Release();
+    };
     
 }
 
@@ -691,12 +718,15 @@ namespace oglr {
         JULIA_FRAGMENT_SHADER.LoadShader("Resources/Shaders/juliaFragmentShader.frag", GL_FRAGMENT_SHADER);
         MANDELBROT_DOUBLE_VERTEX_SHADER.LoadShader("Resources/Shaders/mandelbrotVertexShaderDouble.vert", GL_VERTEX_SHADER);
         MANDELBROT_DOUBLE_FRAGMENT_SHADER.LoadShader("Resources/Shaders/mandelbrotFragmentShaderDouble.frag", GL_FRAGMENT_SHADER);
+        DEFAULT_SKYBOX_VERTEX_SHADER.LoadShader("Resources/Shaders/skyboxVertexShader.vert", GL_VERTEX_SHADER);
+        DEFAULT_SKYBOX_FRAGMENT_SHADER.LoadShader("Resources/Shaders/skyboxFragmentShader.frag", GL_FRAGMENT_SHADER);
 
         //Shader Programs
         DEFAULT_SHADER_PROGRAM.Initialise(&DEFAULT_VERTEX_SHADER,&DEFAULT_FRAGMENT_SHADER);
         MANDELBROT_SHADER_PROGRAM.Initialise(&MANDELBROT_VERTEX_SHADER, &MANDELBROT_FRAGMENT_SHADER);
         JULIA_SHADER_PROGRAM.Initialise(&JULIA_VERTEX_SHADER, &JULIA_FRAGMENT_SHADER);
         MANDELBROT_DOUBLE_SHADER_PROGRAM.Initialise(&MANDELBROT_DOUBLE_VERTEX_SHADER, &MANDELBROT_DOUBLE_FRAGMENT_SHADER);
+        DEFAULT_SKYBOX_SHADER_PROGRAM.Initialise(&DEFAULT_SKYBOX_VERTEX_SHADER, &DEFAULT_SKYBOX_FRAGMENT_SHADER);
     }
     void Renderer::Clear(RGBA colour) {
         glClearColor(colour.r, colour.g, colour.b, colour.a);
@@ -1370,25 +1400,26 @@ namespace oglr {
             std::cout << "Failed to load texture\n";
             return false;
         }
+        glGenTextures(1, &m_TextureID);
+        glBindTexture(GL_TEXTURE_2D, m_TextureID);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, m_Data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        stbi_image_free(m_Data);
         return true;
     }
 
     void Texture::Bind() {
         if (m_Data) {
-            glGenTextures(1, &m_TextureID);
             glBindTexture(GL_TEXTURE_2D, m_TextureID);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, m_Data);
-            glGenerateMipmap(GL_TEXTURE_2D);
         }
-        stbi_image_free(m_Data);
     }
     void Texture::UnBind() {
-
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
     //Model
@@ -1538,6 +1569,7 @@ namespace oglr {
     }
 
     void Model::Render() {
+        m_Texture.Bind();
         glBindVertexArray(m_VAO);
         glDrawArrays(GL_TRIANGLES, 0, m_Faces.size()*3);
     }
@@ -1546,5 +1578,146 @@ namespace oglr {
         glDeleteVertexArrays(1, &m_VAO);
         m_VBO.DeleteBuffer();
         m_Texture.UnBind();
+    }
+
+    void Cubemap::Create(std::string posX, std::string negX, std::string posY, std::string negY, std::string posZ, std::string negZ) {
+        int width, height, channels;
+        unsigned char *posXData, *negXData, *posYData, *negYData, *posZData, *negZData;
+
+        glGenTextures(1, &m_Texture);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_Texture);
+
+        posXData = LoadTexture(posX, width, height, channels);
+        negXData = LoadTexture(negX, width, height, channels);
+        posYData = LoadTexture(posY, width, height, channels);
+        negYData = LoadTexture(negY, width, height, channels);
+        posZData = LoadTexture(posZ, width, height, channels);
+        negZData = LoadTexture(negZ, width, height, channels);
+
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, posXData);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, negXData);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, posYData);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, negYData);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, posZData);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, negZData);
+
+        
+        delete[] posXData;
+        delete[] negXData;
+        delete[] posYData;
+        delete[] negYData;
+        delete[] posZData;
+        delete[] negZData;
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+        
+        glGenSamplers(1, &m_Sampler);
+        glSamplerParameteri(m_Sampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glSamplerParameteri(m_Sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+        glSamplerParameteri(m_Sampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(m_Sampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(m_Sampler, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        
+
+        glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+    }
+    void Cubemap::Release() {
+        glDeleteSamplers(1, &m_Sampler);
+        glDeleteTextures(1, &m_Texture);
+    }
+    unsigned char* Cubemap::LoadTexture(std::string fileName, int& width, int& height, int& channels) {
+        unsigned char* data = stbi_load(fileName.c_str(), &width, &height, &channels, 0);
+        if (!data) {
+            std::cout << "Failed to load texture: " << fileName << "\n";
+        }
+        return data;
+    }
+    void Cubemap::Bind() {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_Texture);
+        //glBindSampler(textureUnit, m_Sampler);
+    }
+
+    void Skybox::Create(float size, std::string posX, std::string negX, std::string posY, std::string negY, std::string posZ, std::string negZ) {
+        m_Cubemap.Create(posX, negX, posY, negY, posZ, negZ);
+        m_VBO.Create();
+        m_VBO.BindBuffer();
+
+
+        glm::vec3 vSkyBoxVertices[24] =
+        {
+            // Front face
+            glm::vec3(size, size, size), glm::vec3(size, -size, size), glm::vec3(-size, size, size), glm::vec3(-size, -size, size),
+            // Back face
+            glm::vec3(-size, size, -size), glm::vec3(-size, -size, -size), glm::vec3(size, size, -size), glm::vec3(size, -size, -size),
+            // Left face
+            glm::vec3(-size, size, size), glm::vec3(-size, -size, size), glm::vec3(-size, size, -size), glm::vec3(-size, -size, -size),
+            // Right face
+            glm::vec3(size, size, -size), glm::vec3(size, -size, -size), glm::vec3(size, size, size), glm::vec3(size, -size, size),
+            // Top face
+            glm::vec3(-size, size, -size), glm::vec3(size, size, -size), glm::vec3(-size, size, size), glm::vec3(size, size, size),
+            // Bottom face
+            glm::vec3(size, -size, -size), glm::vec3(-size, -size, -size), glm::vec3(size, -size, size), glm::vec3(-size, -size, size),
+        };
+        glm::vec2 vSkyBoxTexCoords[4] =
+        {
+            glm::vec2(0.0f, 1.0f), glm::vec2(0.0f, 0.0f), glm::vec2(1.0f, 1.0f), glm::vec2(1.0f, 0.0f)
+        };
+
+        glm::vec3 vSkyBoxNormals[6] =
+        {
+            glm::vec3(0.0f, 0.0f, -1.0f),
+            glm::vec3(0.0f, 0.0f, 1.0f),
+            glm::vec3(1.0f, 0.0f, 0.0f),
+            glm::vec3(-1.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, -1.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        };
+
+        glm::vec4 vColour = glm::vec4(1, 1, 1, 1);
+        for (int i = 0; i < 24; i++) {
+            m_VBO.AddData(&vSkyBoxVertices[i], sizeof(glm::vec3));
+            m_VBO.AddData(&vSkyBoxTexCoords[i % 4], sizeof(glm::vec2));
+            m_VBO.AddData(&vSkyBoxNormals[i / 4], sizeof(glm::vec3));
+        }
+
+        m_VBO.UploadBufferData(GL_STATIC_DRAW);
+
+        // Set the vertex attribute locations
+        GLsizei istride = 2 * sizeof(glm::vec3) + sizeof(glm::vec2);
+
+        glGenVertexArrays(1, &m_VAO);
+        glBindVertexArray(m_VAO);
+        // Vertex positions
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, istride, 0);
+        // Texture coordinates
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, istride, (void*)sizeof(glm::vec3));
+        // Normal vectors
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, istride, (void*)(sizeof(glm::vec3) + sizeof(glm::vec2)));
+
+    }
+    void Skybox::Release() {
+
+    }
+    void Skybox::Render() {
+        glDepthMask(GL_FALSE);
+        glBindVertexArray(m_VAO);
+        m_Cubemap.Bind();
+        glDisable(GL_CULL_FACE);
+        for (int i = 0; i < 6; i++) {
+            //m_textures[i].Bind();
+            glDrawArrays(GL_TRIANGLE_STRIP, i * 4, 4);
+        }
+        glEnable(GL_CULL_FACE);
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
     }
 }
